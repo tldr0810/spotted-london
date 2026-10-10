@@ -623,8 +623,8 @@ code { font-family: var(--mono); font-size: 12px; background: var(--soft); paddi
 .mp-main { position: relative; height: 100vh; height: 100dvh; overflow: hidden; overflow: clip }
 .mp-home { position: absolute; inset: 0; background: #ece8df; overflow: hidden; overflow: clip }
 .mp-map { position: absolute; inset: 0 }
-/* solid strip behind the phone status bar (installed app): the map stops below it, so iOS has no map to haze */
-.mp-home::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--paper); z-index: 7; pointer-events: none }
+/* solid strip behind the phone status bar (installed app): the map stops below it. Fixed, because iOS 26 only treats a fixed element at the top edge as chrome and tints its edge effect with that element's colour */
+.mp-home::before { content: ''; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--paper); z-index: 7; pointer-events: none }
 .mp-map .ml { position: absolute; inset: 0; animation: fade var(--dur-3) }
 .mp-mapfill { position: absolute; inset: 0; background: #ece8df radial-gradient(var(--dot) 1.1px, transparent 1.2px) 0 0 / 22px 22px }
 /* MapLibre's corners stay clear of our chrome */
