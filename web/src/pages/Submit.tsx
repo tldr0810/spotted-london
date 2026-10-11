@@ -7,6 +7,7 @@ import { SignInPrompt } from './Account';
 import { useDebounced, useErrorToast, useMe, useSheet, useToast } from '../lib/hooks';
 import { haptic } from '../lib/motion';
 import { compressImage } from '../lib/image';
+import { makeThumb } from '../lib/thumbs';
 import { Icon } from '../components/Icon';
 import { Cover } from '../components/PopupBits';
 import { Turnstile, useNeedsTurnstile, useProviders } from '../components/Turnstile';
@@ -217,7 +218,8 @@ function SubmitForm({ onDone }: { onDone: (p: Popup) => void }) {
         setSaving(`Uploading photo ${i + 1} of ${photos.length}`);
         try {
           const blob = await compressImage(ph.file);
-          await api(`/popups/${created.id}/images`, { method: 'POST', body: blob, headers: { 'content-type': blob.type } });
+          const photo = await api<{ id: string }>(`/popups/${created.id}/images`, { method: 'POST', body: blob, headers: { 'content-type': blob.type } });
+          await makeThumb(created.id, photo.id, blob).catch(() => {}); // optional: lists fall back to the full photo
         } catch (e) { onError(e); }
       }
       if (photosOn && linkPhoto) {

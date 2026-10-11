@@ -7,6 +7,7 @@ import { useMe, useToast } from '../lib/hooks';
 import { useTasteSync } from '../lib/taste';
 import { useAfterSignIn } from '../lib/after-sign-in';
 import { useLocalSaves } from '../lib/local-saves';
+import { useAutoThumbs } from '../lib/thumbs';
 import { GateProvider } from './SignInSheet';
 import { NavMenu } from './NavMenu';
 import { PopupSheet } from './PopupSheet';
@@ -29,6 +30,7 @@ export function Shell() {
   const { data: me } = useMe();
   useTasteSync();
   useAfterSignIn();
+  useAutoThumbs(me?.role === 'admin');
   const localSaves = useLocalSaves();
   const loc = useLocation();
   const [sp, setSp] = useSearchParams();

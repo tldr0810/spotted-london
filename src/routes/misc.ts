@@ -39,7 +39,7 @@ export const images = new Hono<AppEnv>();
 
 images.get('/*', async c => {
   const key = c.req.path.replace(/^\/api\/v1\/images\//, '');
-  if (!/^popups\/[\w]+\/[\w]+\.(webp|jpg|png)$/.test(key)) throw new ApiError(404, 'not_found', 'Image not found.');
+  if (!/^(popups|thumbs)\/[\w]+\/[\w]+\.(webp|jpg|png)$/.test(key)) throw new ApiError(404, 'not_found', 'Image not found.');
   const obj = c.env.IMAGES ? await c.env.IMAGES.get(key) : null;
   if (!obj) throw new ApiError(404, 'not_found', 'Image not found.');
   const headers = new Headers();

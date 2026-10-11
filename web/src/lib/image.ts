@@ -4,7 +4,7 @@
 interface Opts { maxEdge?: number; maxBytes?: number; jpeg?: boolean }
 
 /** `jpeg` forces JPEG output (the vision model reads JPEG most reliably). */
-export async function compressImage(file: File, { maxEdge = 1600, maxBytes = 5 * 1024 * 1024, jpeg = false }: Opts = {}): Promise<Blob> {
+export async function compressImage(file: Blob, { maxEdge = 1600, maxBytes = 5 * 1024 * 1024, jpeg = false }: Opts = {}): Promise<Blob> {
   if (!file.type.startsWith('image/')) throw new Error('That file is not a photo.');
   const bitmap = await createImageBitmap(file).catch(() => null);
   if (!bitmap) throw new Error('This photo format is not supported. Try a JPEG or PNG.');

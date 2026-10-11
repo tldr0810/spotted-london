@@ -19,7 +19,7 @@ const HORIZON = 90 * DAY;
  */
 export async function loadSnapshotItems(db: D1Database, now: number) {
   const { results } = await db.prepare(
-    `SELECT *, (SELECT r2_key FROM popup_images i WHERE i.popup_id = popups.id ORDER BY position LIMIT 1) AS cover_key,
+    `SELECT *, (SELECT COALESCE(i.thumb_key, i.r2_key) FROM popup_images i WHERE i.popup_id = popups.id ORDER BY position LIMIT 1) AS cover_key,
        ${SOURCE_CHECKED_SQL}
      FROM popups WHERE status IN (${PUBLIC_STATUSES.map(() => '?').join(',')}) AND end_at > ? AND start_at < ? ORDER BY id`,
   ).bind(...PUBLIC_STATUSES, now, now + HORIZON).all<PopupRow & { cover_key: string | null; source_checked: number }>();

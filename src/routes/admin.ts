@@ -140,6 +140,25 @@ async function resolveReports(db: D1Database, popupId: string, resolution: 'uphe
  * Sets or clears a pop-up's tags (the one way a person overrides what an agent tagged). `tags: null` puts it back to
  * "nobody has looked yet", `[]` says none apply. Anything that is not on the list is refused, not skipped.
  */
+/**
+ * Photos that have no small copy yet, for the admin's browser to make (see PUT /popups/:id/images/:imageId/thumb).
+ * `after` is the last id seen, so a photo that cannot be decoded is passed over, not asked for again.
+ * `left` (how many are missing in all) comes with the first page only.
+ */
+admin.get('/images/needing-thumbs', async c => {
+  requireAdmin(c);
+  const after = c.req.query('after') ?? '';
+  const limit = Math.min(10, Math.max(1, Number(c.req.query('limit')) || 4));
+  const { results } = await c.env.DB.prepare('SELECT id, popup_id, r2_key FROM popup_images WHERE thumb_key IS NULL AND id > ? ORDER BY id LIMIT ?')
+    .bind(after, limit).all<{ id: string; popup_id: string; r2_key: string }>();
+  const left = after ? null : (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM popup_images WHERE thumb_key IS NULL').first<{ n: number }>())?.n ?? 0;
+  return c.json({
+    items: results.map(r => ({ id: r.id, popup_id: r.popup_id, url: `/api/v1/images/${r.r2_key}` })),
+    next: results.length === limit ? results[results.length - 1].id : null,
+    left,
+  });
+});
+
 admin.put('/popups/:id/tags', async c => {
   const a = requireAdmin(c);
   const now = c.get('now');

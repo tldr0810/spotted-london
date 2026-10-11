@@ -11,7 +11,7 @@ import { recompute, SOURCE_CHECKED_SQL, toPublic } from '../db/popups';
 import { tagFilter } from '../shared/tags';
 import { buildPopupSnapshot, entersOrLeavesPublic, rebuildSnapshotSoon } from '../db/snapshot';
 import { awardKarma } from '../db/karma';
-import { addPhotoFromUrl, resolveImageUrl } from '../lib/photo';
+import { addPhotoFromUrl, resolveImageUrl, sniffPhoto } from '../lib/photo';
 import { audit } from './admin';
 
 export const popups = new Hono<AppEnv>();
@@ -86,7 +86,7 @@ export async function listPopups(db: D1Database, q: Record<string, string>, now:
     args.push(s, n, w, e);
   }
 
-  const sql = `SELECT *, (SELECT r2_key FROM popup_images i WHERE i.popup_id = popups.id ORDER BY position LIMIT 1) AS cover_key,
+  const sql = `SELECT *, (SELECT COALESCE(i.thumb_key, i.r2_key) FROM popup_images i WHERE i.popup_id = popups.id ORDER BY position LIMIT 1) AS cover_key,
       ${SOURCE_CHECKED_SQL}
     FROM popups WHERE ${where.join(' AND ')} ORDER BY hot DESC, id LIMIT ? OFFSET ?`;
   const { results } = await db.prepare(sql).bind(...args, near ? 500 : limit + 1, near ? 0 : offset).all<PopupRow & { source_checked: number }>();
@@ -371,6 +371,32 @@ popups.post('/:id/images', async c => {
   return c.json({ id, url: `/api/v1/images/${key}` }, 201);
 });
 
+/* ---------- PUT /popups/:id/images/:imageId/thumb (the poster's browser, or an admin's) ----------
+   A small copy of a photo for lists, made in the browser (the Worker has no CPU to resize on the free plan).
+   Lists show it instead of the full photo, which can be 2 MB for a card that is 100 px wide. A new copy gets a
+   new key, because a key is cached for good (see the image route). */
+export const MAX_THUMB_BYTES = 150 * 1024;
+popups.put('/:id/images/:imageId/thumb', async c => {
+  const u = requireUser(c);
+  const db = c.env.DB;
+  const p = await load(db, c.req.param('id'));
+  if (p.created_by !== u.id && u.role !== 'admin') throw new ApiError(403, 'not_yours', 'Only the poster or an admin can add a thumbnail.');
+  const img = await db.prepare('SELECT id, thumb_key FROM popup_images WHERE id = ? AND popup_id = ?').bind(c.req.param('imageId'), p.id).first<{ id: string; thumb_key: string | null }>();
+  if (!img) throw new ApiError(404, 'not_found', 'That photo is not on this pop-up.');
+  if (Number(c.req.header('content-length') ?? 0) > MAX_THUMB_BYTES) throw new ApiError(413, 'thumb_too_large', 'A thumbnail can be at most 150 KB.');
+  const body = await c.req.arrayBuffer();
+  if (!body.byteLength) throw bad('image_empty', 'The thumbnail is empty.');
+  if (body.byteLength > MAX_THUMB_BYTES) throw new ApiError(413, 'thumb_too_large', 'A thumbnail can be at most 150 KB.');
+  const kind = sniffPhoto(new Uint8Array(body)); // what the bytes are, not what the header says
+  if (!kind || kind.type === 'image/png') throw new ApiError(415, 'image_type', 'Thumbnails must be WebP or JPEG.');
+  const key = `thumbs/${p.id}/${newId()}.${kind.ext}`;
+  await c.env.IMAGES.put(key, body, { httpMetadata: { contentType: kind.type, cacheControl: 'public, max-age=31536000, immutable' } });
+  await db.prepare('UPDATE popup_images SET thumb_key = ? WHERE id = ?').bind(key, img.id).run();
+  if (img.thumb_key) await c.env.IMAGES.delete(img.thumb_key);
+  // No snapshot rebuild here: the 10 minute cron picks it up, and a backfill would otherwise rebuild it once per photo.
+  return c.json({ id: img.id, url: `/api/v1/images/${key}` });
+});
+
 /* ---------- POST /popups/:id/images/from-url { image_url, page_url } ----------
    The poster pasted a link and the page has a main picture (og:image). We copy it, never hotlink, and credit the page. */
 popups.post('/:id/images/from-url', async c => {
@@ -393,12 +419,13 @@ popups.delete('/:id/images/:imageId', async c => {
   const db = c.env.DB;
   const p = await load(db, c.req.param('id'));
   if (p.created_by !== u.id && u.role !== 'admin') throw new ApiError(403, 'not_yours', 'Only the poster or an admin can remove a photo.');
-  const img = await db.prepare('SELECT id, r2_key, source_url, position FROM popup_images WHERE id = ? AND popup_id = ?').bind(c.req.param('imageId'), p.id).first<{ id: string; r2_key: string; source_url: string | null; position: number }>();
+  const img = await db.prepare('SELECT id, r2_key, thumb_key, source_url, position FROM popup_images WHERE id = ? AND popup_id = ?').bind(c.req.param('imageId'), p.id).first<{ id: string; r2_key: string; thumb_key: string | null; source_url: string | null; position: number }>();
   if (!img) throw new ApiError(404, 'not_found', 'That photo is not on this pop-up.');
   await db.prepare('DELETE FROM popup_images WHERE id = ?').bind(img.id).run();
   // Positions stay in order so the first photo is still the cover.
   await db.prepare('UPDATE popup_images SET position = position - 1 WHERE popup_id = ? AND position > ?').bind(p.id, img.position).run();
   await c.env.IMAGES?.delete(img.r2_key);
+  if (img.thumb_key) await c.env.IMAGES?.delete(img.thumb_key);
   if (u.role === 'admin') await audit(db, u.id, 'popup.image_remove', 'popup', p.id, { image: img.id, source_url: img.source_url }, c.get('now'));
   if (PUBLIC_STATUSES.includes(p.status)) rebuildSnapshotSoon(c); // the cover may have changed
   return c.json({ removed: true });

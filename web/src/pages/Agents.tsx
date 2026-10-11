@@ -6,6 +6,7 @@ import { TAG_LABELS } from '../../../src/shared/tags';
 import { useErrorToast, useMe, useToast } from '../lib/hooks';
 import { Icon } from '../components/Icon';
 import { ScoutSources } from './ScoutSources';
+import { PhotoThumbs } from '../components/PhotoThumbs';
 
 // Admin settings for the AI agents that run on Manyfold (SPEC §13.4).
 
@@ -48,6 +49,7 @@ export default function AgentsPage() {
           <AddAgent roles={q.data.roles} />
           <ScoutSources />
           <TagsReport />
+          <PhotoThumbs />
           <Setup view={q.data} />
         </>
       ) : <div className="empty" style={{ marginTop: 22 }}><p>{q.error?.message ?? 'Could not load the agents.'}</p><button className="btn sm" onClick={() => q.refetch()}>Try again</button></div>}
