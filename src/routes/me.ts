@@ -48,14 +48,18 @@ me.get('/state', async c => {
 me.get('/saves', async c => {
   const u = requireUser(c);
   const { results } = await c.env.DB.prepare(
-    'SELECT p.* FROM saves s JOIN popups p ON p.id = s.popup_id WHERE s.user_id = ? ORDER BY p.start_at',
-  ).bind(u.id).all<PopupRow>();
+    `SELECT p.*, (SELECT COALESCE(i.thumb_key, i.r2_key) FROM popup_images i WHERE i.popup_id = p.id ORDER BY position LIMIT 1) AS cover_key
+     FROM saves s JOIN popups p ON p.id = s.popup_id WHERE s.user_id = ? ORDER BY p.start_at`,
+  ).bind(u.id).all<PopupRow & { cover_key: string | null }>();
   return c.json({ items: results.map(p => toPublic(p)) });
 });
 
 me.get('/popups', async c => {
   const u = requireUser(c);
-  const { results } = await c.env.DB.prepare('SELECT * FROM popups WHERE created_by = ? ORDER BY created_at DESC LIMIT 100').bind(u.id).all<PopupRow>();
+  const { results } = await c.env.DB.prepare(
+    `SELECT *, (SELECT COALESCE(i.thumb_key, i.r2_key) FROM popup_images i WHERE i.popup_id = popups.id ORDER BY position LIMIT 1) AS cover_key
+     FROM popups WHERE created_by = ? ORDER BY created_at DESC LIMIT 100`,
+  ).bind(u.id).all<PopupRow & { cover_key: string | null }>();
   return c.json({ items: results.map(p => toPublic(p)) });
 });
 

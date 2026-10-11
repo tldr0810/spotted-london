@@ -82,6 +82,17 @@ describe('POST /popups/:id/images/from-url', () => {
     expect(detail.cover_url).toBe(detail.images[0].url);
   });
 
+  it('shows the photo on the Saved and My pop-ups lists too', async () => {
+    const poster = await user(), p = await popup(poster);
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(png(), { headers: { 'content-type': 'image/png' } }));
+    expect((await post(`/api/v1/popups/${p.id}/images/from-url`, poster, { image_url: '/cover.png', page_url: 'https://www.shop.test/sale' })).status).toBe(201);
+    expect((await call(`/api/v1/popups/${p.id}/save`, poster, { method: 'PUT' })).status).toBeLessThan(300);
+    const saved = (await (await call('/api/v1/me/saves', poster)).json()) as { items: { id: string; cover_url: string | null }[] };
+    expect(saved.items.find(i => i.id === p.id)?.cover_url).toMatch(/\/images\/popups\//);
+    const mine = (await (await call('/api/v1/me/popups', poster)).json()) as { items: { id: string; cover_url: string | null }[] };
+    expect(mine.items.find(i => i.id === p.id)?.cover_url).toMatch(/\/images\/popups\//);
+  });
+
   it('is for the poster only, and refuses a private address', async () => {
     const poster = await user(), other = await user(), p = await popup(poster);
     expect((await post(`/api/v1/popups/${p.id}/images/from-url`, other, { image_url: 'https://cdn.test/a.jpg', page_url: 'https://shop.test/' })).status).toBe(403);
