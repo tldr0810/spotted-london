@@ -9,7 +9,7 @@ import { DAY, hot, initialStatus, KARMA, PUBLIC_STATUSES, voteWeight } from '../
 import { MAX_DURATION, windowFor, type When } from '../lib/time';
 import { recompute, SOURCE_CHECKED_SQL, toPublic } from '../db/popups';
 import { tagFilter } from '../shared/tags';
-import { buildPopupSnapshot, entersOrLeavesPublic, rebuildSnapshotSoon } from '../db/snapshot';
+import { buildPopupSnapshot, entersOrLeavesPublic, readSnapshot, rebuildSnapshotSoon } from '../db/snapshot';
 import { awardKarma } from '../db/karma';
 import { addPhotoFromUrl, resolveImageUrl, sniffPhoto } from '../lib/photo';
 import { audit } from './admin';
@@ -110,7 +110,7 @@ export async function listPopups(db: D1Database, q: Record<string, string>, now:
 // The whole public list as one stored string, forwarded as it is (the Worker has about 10 ms of CPU, so no
 // JSON.parse). The browser filters it. Registered before /:id so "snapshot" is not read as a pop-up id.
 popups.get('/snapshot', async c => {
-  const row = await c.env.DB.prepare("SELECT version, json FROM snapshots WHERE key = 'popups'").first<{ version: string; json: string }>();
+  const row = await readSnapshot(c.env.DB);
   // Nothing stored yet (first deploy) or it was too big to store: build one now and send that.
   const { version, json } = row ?? await buildPopupSnapshot(c.env.DB, c.get('now'));
   const etag = `"${version}"`;

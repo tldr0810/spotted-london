@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { env, exports } from 'cloudflare:workers';
 import { runCron } from '../src/cron';
 import { listPopups } from '../src/routes/popups';
-import { buildPopupSnapshot, entersOrLeavesPublic, loadSnapshotItems, snapshotItems } from '../src/db/snapshot';
+import { buildPopupSnapshot, entersOrLeavesPublic, loadSnapshotItems, readSnapshot, snapshotItems, snapshotStats } from '../src/db/snapshot';
 import { filterPopups } from '../src/shared/filter-popups';
 import { hot } from '../src/lib/scoring';
 
@@ -233,6 +233,55 @@ describe('snapshotItems (what the MCP search reads instead of scanning the table
     await env.DB.prepare("DELETE FROM snapshots WHERE key = 'popups'").run();
     expect((await snapshotItems(env.DB, NOW)).map(p => p.id)).toContain('sn_fresh');
     await env.DB.prepare("DELETE FROM popups WHERE id = 'sn_fresh'").run();
+    await buildPopupSnapshot(env.DB, NOW);
+  });
+});
+
+describe('a list too big for one row', () => {
+  const keys = async () => (await env.DB.prepare("SELECT key FROM snapshots WHERE key = 'popups' OR key LIKE 'popups.%' ORDER BY key").all<{ key: string }>()).results.map(r => r.key);
+
+  it('is stored in several rows, and read back as exactly the same text', async () => {
+    const whole = await buildPopupSnapshot(env.DB, NOW);
+    expect(await keys()).toEqual(['popups']); // it fits in one row: stored whole, as before
+    expect((await readSnapshot(env.DB))!.json).toBe(whole.json);
+
+    const small = 4000; // a few pop-ups per row
+    const split = await buildPopupSnapshot(env.DB, NOW, undefined, small);
+    expect(split.json).toBe(whole.json);
+    expect(split.version).toBe(whole.version);
+    const rows = await keys();
+    expect(rows.length).toBeGreaterThan(2);
+    expect(rows).toEqual(['popups', ...rows.slice(1).map((_, i) => `popups.${String(i + 1).padStart(2, '0')}`)]);
+    const read = (await readSnapshot(env.DB))!;
+    expect(read.json).toBe(whole.json);
+    expect(read.version).toBe(whole.version);
+    expect(JSON.parse(read.json).items).toHaveLength(whole.count);
+
+    // The endpoint sends the same text, with the same ETag, and the MCP reader sees every pop-up.
+    const res = await call('GET', '/popups/snapshot');
+    expect(res.text).toBe(whole.json);
+    expect(res.headers.get('etag')).toBe(`"${whole.version}"`);
+    expect((await snapshotItems(env.DB, NOW)).length).toBe(whole.count);
+  });
+
+  it('drops the rows it no longer needs when the list gets shorter', async () => {
+    await buildPopupSnapshot(env.DB, NOW, undefined, 3000);
+    const many = (await keys()).length;
+    expect(many).toBeGreaterThan(2);
+    await buildPopupSnapshot(env.DB, NOW, undefined, 12000);
+    const fewer = (await keys()).length;
+    expect(fewer).toBeLessThan(many);
+    await buildPopupSnapshot(env.DB, NOW);
+    expect(await keys()).toEqual(['popups']);
+    expect(JSON.parse((await readSnapshot(env.DB))!.json).items.length).toBeGreaterThan(10);
+  });
+
+  it('reports its size for the admin page', async () => {
+    const built = await buildPopupSnapshot(env.DB, NOW, undefined, 5000);
+    const stats = await snapshotStats(env.DB);
+    expect(stats.bytes).toBeGreaterThan(built.bytes - 200); // the rows add up to the list (minus the wrapper)
+    expect(stats.bytes).toBeLessThanOrEqual(built.bytes);
+    expect(stats.built_at).toBe(NOW);
     await buildPopupSnapshot(env.DB, NOW);
   });
 });

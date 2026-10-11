@@ -50,6 +50,7 @@ export default function AgentsPage() {
           <ScoutSources />
           <TagsReport />
           <PhotoThumbs />
+          <PublicList list={q.data.public_list} />
           <Setup view={q.data} />
         </>
       ) : <div className="empty" style={{ marginTop: 22 }}><p>{q.error?.message ?? 'Could not load the agents.'}</p><button className="btn sm" onClick={() => q.refetch()}>Try again</button></div>}
@@ -105,6 +106,24 @@ function TagsReport() {
           ) : null}
         </>
       )}
+    </section>
+  );
+}
+
+/** The public list is one file every visitor downloads and filters in the browser, so its size is the thing to watch as pop-ups pile up. */
+function PublicList({ list }: { list: AgentsView['public_list'] }) {
+  const size = (b: number) => (b >= 1_000_000 ? `${(b / 1_000_000).toFixed(1)} MB` : `${Math.round(b / 1000)} KB`);
+  const about = Math.round(list.bytes / 800 / 10) * 10; // a pop-up is about 800 bytes in it
+  const big = list.bytes >= list.warn_bytes;
+  return (
+    <section className="panel" style={{ marginTop: 22 }} aria-labelledby="pl-h">
+      <h2 id="pl-h">Public list</h2>
+      {list.bytes ? (
+        <p className="muted" style={{ marginTop: 6 }}>
+          About {about.toLocaleString('en-GB')} pop-ups, {size(list.bytes)}. Every visitor downloads it when the app opens and filters it on their phone, which stays quick up to about {size(list.warn_bytes)}. It is rebuilt every 10 minutes.
+        </p>
+      ) : <p className="muted" style={{ marginTop: 6 }}>No list has been built yet.</p>}
+      {big ? <div className="notice err" style={{ marginTop: 10 }}><Icon name="i-info" /><span>The list is getting big for phones. Ask Claude to make it smaller, for example shorter fields or a shorter time window.</span></div> : null}
     </section>
   );
 }
