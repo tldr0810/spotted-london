@@ -45,6 +45,9 @@ images.get('/*', async c => {
   const headers = new Headers();
   obj.writeHttpMetadata(headers);
   headers.set('etag', obj.httpEtag);
+  // Every upload gets a new key (newId), so a key's bytes never change: the browser can keep it for good
+  // instead of asking the Worker and R2 again for each photo each time the list scrolls into view.
+  headers.set('cache-control', 'public, max-age=31536000, immutable');
   return new Response(obj.body, { headers });
 });
 

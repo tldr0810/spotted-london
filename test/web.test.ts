@@ -52,6 +52,7 @@ describe('lists for the app', () => {
 
     const served = await call(new URL(row.cover_url, 'http://x').pathname);
     expect(served.headers.get('content-type')).toBe('image/webp');
+    expect(served.headers.get('cache-control')).toBe('public, max-age=31536000, immutable'); // keys are never reused
   });
 });
 

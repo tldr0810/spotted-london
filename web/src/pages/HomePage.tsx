@@ -25,6 +25,32 @@ const AskChat = lazy(() => import('../components/AskChat').then(m => ({ default:
 
 type View = 'map' | 'list';
 
+const CARDS_PER_PAGE = 24;
+
+/**
+ * The cards, a page at a time. With all of London in the list that is 600+ cards, each with a photo to decode
+ * and an entrance animation, which makes scrolling on a phone stutter. The next page is added a little before
+ * you reach the end, and it starts again from the top when a filter changes.
+ */
+function CardGrid({ items, stale, resetKey }: { items: Popup[]; stale: boolean; resetKey: string }) {
+  const [n, setN] = useState(CARDS_PER_PAGE);
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => { setN(CARDS_PER_PAGE); }, [resetKey]);
+  useEffect(() => {
+    const el = end.current;
+    if (!el || n >= items.length) return;
+    const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) setN(c => c + CARDS_PER_PAGE); }, { rootMargin: '900px 0px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [n, items.length]);
+  return (
+    <>
+      <div className={`grid ${stale ? 'stale' : ''}`}>{items.slice(0, n).map((p, i) => <PopupCard key={p.id} p={p} i={i} />)}</div>
+      <div ref={end} aria-hidden="true" />
+    </>
+  );
+}
+
 /**
  * The home page: a full-screen map with the list on top of it. Map view keeps the map in charge and shows
  * the list as a strip (phone) or a side panel (desktop); List view gives the screen to the cards.
@@ -182,7 +208,7 @@ export default function HomePage() {
     body = (
       <>
         {items.some(p => p.example) ? <div className="notice small" style={{ marginBottom: 14 }}><Icon name="i-info" /><span>Pop-ups marked <b>Example</b> show how Spotted works. They are not real events.</span></div> : null}
-        <div className={`grid ${q.isPlaceholderData ? 'stale' : ''}`}>{items.map((p, i) => <PopupCard key={p.id} p={p} i={i} />)}</div>
+        <CardGrid items={items} stale={q.isPlaceholderData} resetKey={`${f.when}|${f.category}|${f.verified}|${f.q}|${nearOn}|${q.forYou}`} />
         <Newsletter />
       </>
     );

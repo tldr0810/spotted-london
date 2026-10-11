@@ -41,7 +41,7 @@ export function Cover({ p, className }: { p: Pick<Popup, 'category' | 'cover_url
 
 /** A photo that fades in once it has loaded, over the category pattern. */
 export function Img({ src }: { src: string }) {
-  return <img src={src} alt="" loading="lazy" className="fade" onLoad={shown} onError={hideBroken}
+  return <img src={src} alt="" loading="lazy" decoding="async" className="fade" onLoad={shown} onError={hideBroken}
     ref={el => { if (el?.complete && el.naturalWidth) el.classList.add('in'); }} />;
 }
 const shown = (e: { currentTarget: HTMLImageElement }) => e.currentTarget.classList.add('in');
