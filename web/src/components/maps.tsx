@@ -51,7 +51,7 @@ export const PopupMap = forwardRef<PopupMapHandle, {
 }>(function PopupMap({ items, highlight, onPin, me, padding, onAway }, ref) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
-  const markers = useRef(new Map<string, { m: Marker; el: HTMLButtonElement }>());
+  const markers = useRef(new Map<string, { m: Marker; el: HTMLButtonElement; look: string }>());
   const dot = useRef<Marker | null>(null);
   const onPinRef = useRef(onPin);
   onPinRef.current = onPin;
@@ -97,14 +97,24 @@ export const PopupMap = forwardRef<PopupMapHandle, {
         b.setAttribute('aria-label', p.title);
         b.addEventListener('click', e => { e.stopPropagation(); onPinRef.current(p); });
         const mk = new Marker({ element: b }).setLngLat([p.location.lng, p.location.lat]).addTo(m);
-        entry = { m: mk, el: b };
+        entry = { m: mk, el: b, look: '' };
         markers.current.set(p.id, entry);
       }
-      // Keep MapLibre's own class: it carries the position:absolute the marker transform relies on.
-      entry.el.className = `maplibregl-marker pinm cc-${p.category} ${p.status} ${p.status === 'community' && p.source_checked ? 'checked' : ''} ${isLive(p) ? 'live' : ''} ${fresh ? 'in' : ''}`;
-      // New pins drop in one after another.
-      entry.el.style.animationDelay = fresh ? `${Math.min(added++, 16) * 25}ms` : '';
-      entry.el.innerHTML = iconMarkup(catIcon(p.category)) + '<i class="pb"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg></i>';
+      // The list is rebuilt on every vote, save and clock tick: only touch a pin whose look changed, because
+      // rewriting 600+ pins each time stalls a phone.
+      const checked = p.status === 'community' && p.source_checked ? 'checked' : '';
+      const live = isLive(p) ? 'live' : '';
+      const look = `${p.category} ${p.status} ${checked} ${live}`;
+      if (entry.look !== look) {
+        entry.look = look;
+        // New pins drop in one after another, but only the first few: 600 animations at once is the jank.
+        const drop = fresh && added < 16;
+        // Keep MapLibre's own class: it carries the position:absolute the marker transform relies on.
+        entry.el.className = `maplibregl-marker pinm cc-${p.category} ${p.status} ${checked} ${live} ${drop ? 'in' : ''}`;
+        entry.el.style.animationDelay = drop ? `${added * 25}ms` : '';
+        entry.el.innerHTML = iconMarkup(catIcon(p.category)) + '<i class="pb"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg></i>';
+      }
+      if (fresh) added++;
     }
     for (const [id, x] of markers.current) if (!seen.has(id)) { x.m.remove(); markers.current.delete(id); }
   }, [items]);
