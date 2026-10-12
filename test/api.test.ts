@@ -165,8 +165,10 @@ describe('check-ins', () => {
     // one check-in while live is enough evidence, and its 3x weight clears the bar on its own
     expect(ok.json.status_change).toEqual({ from: 'community', to: 'verified_community' });
     const bad = await api('POST', `/popups/${p.id}/checkin`, { user: far, body: { lat: 51.5262, lng: -0.078 } });
-    expect(bad.status).toBe(422);
+    // too far is a normal answer, not an error: the page shows its message
+    expect(bad.status).toBe(200);
     expect(bad.json.valid).toBe(false);
+    expect(bad.json.message).toMatch(/m away/);
     expect((await api('POST', `/popups/${p.id}/checkin`, { user: near, body: { lat: 51.5136, lng: -0.1342 } })).status).toBe(409);
   });
 

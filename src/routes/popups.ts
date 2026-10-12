@@ -303,7 +303,7 @@ popups.post('/:id/checkin', async c => {
     message: valid ? 'Checked in. Your vote now counts three times.' : `You look ${Math.round(distance)} m away. Check-ins need to be within ${CHECKIN_RADIUS_M} m.`,
     karma_awarded: karma,
     status_change: change,
-  }, valid ? 200 : 422);
+  });
 });
 
 /* ---------- POST /popups/:id/report ---------- */
