@@ -10,7 +10,7 @@ import { haptic, scrollBehavior, usePhone } from '../lib/motion';
 import { nearChoiceMade, useNearMe } from '../lib/near-me';
 import { useWelcome } from '../lib/onboarding';
 import { nextStep } from '../../../src/shared/onboarding';
-import { updateTaste, useKeptNote, useTaste } from '../lib/taste';
+import { getTaste, updateTaste, useKeptNote, useTaste } from '../lib/taste';
 import type { Snap } from '../lib/map-home';
 import { Icon } from '../components/Icon';
 import type { PopupMapHandle } from '../components/maps';
@@ -181,9 +181,10 @@ export default function HomePage() {
   const hidden = q.hidden.map(c => CATS[c as keyof typeof CATS]);
   const fy = q.forYou ? (
     <div className="mp-fy">
-      <span className="t">{hidden.length ? `Leaving out ${hidden.join(', ')}` : 'Starting with what you like'}</span>
+      <Icon name="i-sparkle" />
+      <span className="t">{hidden.length ? `For you: leaving out ${hidden.join(', ')}` : 'For you: what you like comes first'}</span>
       <button type="button" className="btn sm subtle" onClick={() => updateTaste(t => ({ ...t, on: false }))}>Show all</button>
-      <button type="button" className="btn sm subtle" onClick={openDeck}>Retake</button>
+      <button type="button" className="btn sm" onClick={openDeck}>Retake</button>
     </div>
   ) : null;
 
@@ -299,7 +300,7 @@ export default function HomePage() {
         <button type="button" className="btn mp-reopen" onClick={() => setPanelOpen(true)}><Icon name="i-list" />Show list<span className="mp-reopen-n">{q.isPending ? '' : items.length}</span></button>
       ) : null}
 
-      {deck ? <Suspense fallback={null}><TasteDeck items={q.all ?? []} fresh={deck === 'retake'} onClose={() => setDeck(null)} /></Suspense> : null}
+      {deck ? <Suspense fallback={null}><TasteDeck items={q.all ?? []} fresh={deck === 'retake'} onClose={() => { setDeck(null); if (getTaste().swipes === 0) toast('Tap For you any time to pick what you like.', 'i-sparkle'); }} /></Suspense> : null}
       {askMounted ? (
         <Suspense fallback={null}>
           {/* Your position is used here only to put the nearest first. It is never sent. */}

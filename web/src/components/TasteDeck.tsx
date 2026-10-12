@@ -123,7 +123,7 @@ export function TasteDeck({ items, fresh, onClose }: { items: Popup[]; fresh: bo
           ) : (
             <>
               <h2>No favourites yet</h2>
-              <p>That is fine. We will keep showing everything, and learn from what you save.</p>
+              <p>That is fine. We will keep showing everything, and learn from what you save. Tap For you any time to pick again.</p>
             </>
           )}
           <div className="row" style={{ gap: 8, justifyContent: 'center' }}>

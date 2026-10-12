@@ -781,9 +781,10 @@ code { font-family: var(--mono); font-size: 12px; background: var(--soft); paddi
 
 /* For you: the chip, the strip under the count, and the swipe deck */
 .chip.you:not([aria-pressed="true"]) { background: var(--accent-soft) }
-.mp-fy { display: flex; align-items: center; gap: 2px; margin-top: 4px; font-size: 12px; color: var(--ink2) }
+.mp-fy { display: flex; align-items: center; gap: 6px; margin: 8px 0 12px; padding: 4px 4px 4px 10px; border-radius: 14px; background: var(--accent-soft); font-size: 13px; font-weight: 600; color: var(--ink) }
+.mp-fy > svg.i { width: 16px; height: 16px; flex: none; color: var(--accent) }
 .mp-fy .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-.mp-fy .btn.sm { min-height: 30px; padding: 0 10px; font-size: 12px }
+.mp-fy .btn.sm { min-height: 30px; padding: 0 10px; font-size: 12px; flex: none }
 
 .td-wrap { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; overflow: hidden; background: var(--paper); background-image: radial-gradient(var(--dot) 1.1px, transparent 1.2px); background-size: 22px 22px; padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px); animation: fade var(--dur-2) }
 .td-wrap > * { width: 100%; max-width: 420px }
