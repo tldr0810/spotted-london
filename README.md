@@ -2,24 +2,23 @@
 
 **Pop-ups in London, added by locals and verified by the community.** Live at [spotted-london.zack11712.workers.dev](https://spotted-london.zack11712.workers.dev).
 
-Anyone can add a pop-up. The community decides whether it is real with weighted votes and check-ins (Reddit-style), and admins can override. AI agents help find and check pop-ups, and people can ask their own AI assistant what is on through an MCP server. Mobile first.
+Anyone can add a pop-up. The community decides if it is real with weighted votes and check-ins, and admins can override. AI agents help find and check pop-ups, and people can ask their own AI assistant what is on. Mobile first.
 
 ## What is inside
 
-- **Map home** with a bottom sheet list, filters, "near me" (your position never leaves the browser) and a "For you" taste that learns from swipes.
-- **Community verification**: vote weight from karma and account age, Wilson score, check-ins, rate limits and a daily abuse scan. All rules live in one file, `src/lib/scoring.ts`.
-- **Paste a link to add a pop-up**: Workers AI reads the page, a screenshot or pasted text and fills the form.
-- **An agent fleet** (Scout, Triage, Checker) that finds pop-ups, verifies drafts against the source page with word-for-word evidence quotes, and clears most of the review queue on its own.
-- **MCP server and `/llms.txt`** so ChatGPT, Claude or Gemini can search the list.
-- **Runs entirely on free tiers**: one Cloudflare Worker (Hono), D1, KV, R2, Cron, Turnstile; Vite + React 19, TanStack Query, MapLibre with OpenFreeMap tiles.
+- Map home with a bottom sheet list, filters, "near me" and a "For you" taste.
+- Community verification: all rules in `src/lib/scoring.ts`.
+- Paste a link, screenshot or text to add a pop-up (Workers AI fills the form).
+- Agent fleet (Scout, Triage, Checker, Concierge) running on [Manyfold](https://manyfold.ai).
+- MCP server at `/mcp` and `/llms.txt`, so ChatGPT, Claude or Gemini can search the list. Setup page: `/connect`.
+- Free tiers only: one Cloudflare Worker (Hono), D1, KV, R2, Cron, Turnstile. Web app: Vite, React 19, MapLibre.
 
 ## Documents
 
-- [SPEC.md](SPEC.md): product and technical spec (in Chinese), with the decision log.
+- [CLAUDE.md](CLAUDE.md): architecture, code map and the rules that are easy to break.
+- [SPEC.md](SPEC.md): product spec (Chinese) and decision log.
 - [docs/DESIGN.md](docs/DESIGN.md): design system.
-- [CLAUDE.md](CLAUDE.md): architecture notes and the rules that are easy to break. Written for AI coding agents, useful for people too.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to send a pull request.
-- [prototype/index.html](prototype/index.html): the original clickable prototype.
 
 ## Quick start
 
@@ -32,299 +31,64 @@ npm install
 cp .dev.vars.example .dev.vars
 npm run db:reset
 npm run build:web
-npm run dev:local      # Worker on :8787 (AI autofill from pasted text is off without a login)
+npm run dev:local      # Worker on :8787
 ```
 
-Open `http://localhost:8787`, then sign in at `/signin` as `new@spotted.dev` (the page shows the link on screen, no email is sent). For hot reload of the web app run `npm run dev:web` in a second terminal and use `http://localhost:5173`.
+Open `http://localhost:8787` and sign in at `/signin` as `new@spotted.dev` (the link shows on screen, no email is sent). For hot reload run `npm run dev:web` in a second terminal and open `http://localhost:5173`.
 
-The rest of this file is reference for running and deploying your own copy.
+| Command | What it does |
+|---|---|
+| `npm run dev` | Same as `dev:local` but uses Workers AI (needs `npx wrangler login`) |
+| `npm test` | Unit and API tests inside the Workers runtime |
+| `npm run typecheck` | Type check the Worker (web: `cd web && npx tsc --noEmit`) |
+| `npm run deploy` | Build web and deploy to production |
 
-## Local development in detail
-
-D1, KV and R2 are simulated on your machine. Workers AI cannot be, so `npm run dev` connects to Cloudflare for it and needs `npx wrangler login`. `npm run dev:local` skips that; autofill from links still works, pasted text and screenshots show a friendly error.
-
-```bash
-npm install                 # also installs web/
-cp .dev.vars.example .dev.vars
-npm run db:migrate
-npm run db:seed
-npm run build:web           # the Worker serves web/dist, so build once
-npm run dev                 # terminal 1: Worker + API on :8787 (or npm run dev:local without a login)
-npm run dev:web             # terminal 2: the app with hot reload on :5173
-```
-
-Open `http://localhost:5173`. Vite forwards `/api` and `/login` to the Worker. The API is also at `http://localhost:8787/api/v1`. The seed has fictional pop-ups, and these users:
-
-| id | role | notes |
-|---|---|---|
-| `dev_admin` | admin | can use the review queue |
-| `dev_zack` | member | karma 58, vote weight 3.3x, trust 44 |
-| `dev_new` | member | 12-hour-old account, votes weigh 0 |
-
-### Sign in
-
-Open `http://localhost:5173/signin` and enter an email. Without an email provider configured, the page shows the sign-in link instead of sending it. Try `zack@spotted.dev` to sign in as the seeded member.
-
-For scripts and curl you can also act as a user with the `x-dev-user` header. This only works when `ENVIRONMENT=development`, which comes from `.dev.vars` and is never set in production.
-
-```bash
-curl "localhost:8787/api/v1/popups?when=weekend"
-curl -X PUT localhost:8787/api/v1/popups/arches/vote \
-  -H 'x-dev-user: dev_zack' -H 'content-type: application/json' \
-  -d '{"kind":"existence","value":1}'
-```
-
-Run the scheduled jobs by hand with `npx wrangler dev --test-scheduled`, then open `http://localhost:8787/__scheduled?cron=*/10+*+*+*+*`.
-
-## Tests
-
-```bash
-npm test          # unit + API tests inside the Workers runtime, with a local D1
-npm run typecheck
-```
-
-## Web app
-
-`web/` is a Vite + React single-page app, built to `web/dist` and served by the same Worker as static assets (free, no Worker CPU). Pop-up pages (`/p/:slug`) run through the Worker first, which injects the title, share preview and schema.org Event data, so link previews and search engines see them without JavaScript.
-
-- Routing: React Router. Data: TanStack Query. Maps: MapLibre with OpenFreeMap tiles, loaded only on map screens.
-- Address search: Photon (OpenStreetMap), through `/api/v1/geocode`, cached for a day.
-- Photos are resized in the browser to WebP, at most 1600 px, before upload.
-- Phone layout under 900 px: bottom tabs and bottom sheets. Desktop: sidebar and a right drawer.
-- Installable (PWA): `web/public/manifest.webmanifest`, icons in `web/public/icons/` (regenerate the PNGs from `icon.svg` with `node scripts/make-icons.mjs`) and `web/public/sw.js`. The service worker saves the page and its `/assets/*` files on first visit so the app opens offline, and never touches `/api`, `/login`, `/mcp`, `/privacy` or `/llms.txt`, so data is always live. It is only registered in the production build (`registerServiceWorker` in `web/src/lib/pwa.ts`). The menu shows "Install the app" on Chrome, Edge and Android (the browser's install prompt) and short steps on iPhone and iPad; nothing once it is installed. To test: `npm run build:web`, then `npm run dev:local`, and look under Application in the browser's dev tools. To change what is cached, edit `sw.js` and bump the cache names.
-
-## Layout
-
-```
-src/
-  index.ts          Hono app, error format, cron entry
-  middleware.ts     session, CSRF guard, admin checks, Turnstile, IP hashing
-  pages.ts          sign-in confirm page, SEO tags for /p/:slug, robots.txt, sitemap.xml
-  cron.ts           end expired pop-ups, settle karma, hourly hot refresh, reminders, start agent runs
-  mcp.ts            MCP server at /mcp: public search, plus agent tools with a key
-  lib/scoring.ts    vote weight, Wilson confidence, status rules, trust, hot (SPEC 4)
-  lib/extract.ts    paste-a-link autofill parsing (SPEC 3.8)
-  lib/time.ts       Europe/London calendar maths
-  lib/geo.ts        geohash, distances, London bounds
-  db/popups.ts      recompute aggregates and status after every vote
-  db/karma.ts       idempotent karma awards with the daily cap
-  db/agents.ts      AI agents: roles, schedules, starting and checking runs
-  lib/a2a.ts        A2A client for Manyfold (start a task, check a task)
-  lib/seal.ts       AES-GCM for the stored Manyfold caller tokens
-  routes/           auth, popups, extract, geocode, me, admin, agents, newsletter, images, users
-  services/email.ts sending through Resend
-migrations/         D1 schema
-skills/             the skill the Manyfold agents install (spotted-london/SKILL.md)
-seed/seed.sql       local example data
-web/src/
-  main.tsx          routes
-  components/       Shell (sidebar, top bar, tabs), PopupSheet, cards, maps, icons
-  pages/            Explore, MapPage, Submit, Account (Saved, Me, Sign in, Review queue), Agents
-  lib/              API client, hooks, formatting, photo compression
-```
-
-## Sign in, in production
-
-Email magic links and Google, no passwords (SPEC 3.4).
-
-- Session cookies are `HttpOnly`, `SameSite=Lax`, 30 days. The database stores only a SHA-256 of each session and each sign-in link.
-- Sign-in links work once, last 15 minutes, and open a confirm page first, so email scanners cannot use them up.
-- Google uses the authorization code flow with PKCE and a state cookie.
-- Writes that carry the session cookie are rejected when they come from another site.
-
-Before deploying, set `APP_URL` in `wrangler.jsonc` and add the secrets:
-
-```bash
-npx wrangler secret put RESEND_API_KEY        # from resend.com, free tier
-npx wrangler secret put EMAIL_FROM            # e.g. Spotted London <hello@your-domain>
-npx wrangler secret put GOOGLE_CLIENT_ID      # Google Cloud console, OAuth client (web)
-npx wrangler secret put GOOGLE_CLIENT_SECRET
-```
-
-In the Google console, add `<APP_URL>/api/v1/auth/google/callback` as an authorised redirect URI. For local testing with Google, add `http://localhost:8787/api/v1/auth/google/callback` and put the two Google values in `.dev.vars`.
+For scripts, act as a seeded user with the `x-dev-user: dev_zack` header (works only when `ENVIRONMENT=development`, set by `.dev.vars`). Seeded users: `dev_admin` (admin), `dev_zack` (member), `dev_new` (new account, votes weigh 0).
 
 ## AI agents and MCP
 
-Four kinds of AI agent run on [Manyfold](https://manyfold.ai), not on Cloudflare, so they cost no Workers AI quota. Spotted keeps their settings at **/admin/agent**, starts their runs, and shows what they did.
+Agents run on Manyfold, not Cloudflare. Settings, keys and runs are at **/admin/agent**.
 
-| Agent | Job | Writes |
-|---|---|---|
-| Scout | finds new pop-ups on the public web | pending drafts, posted as "Scout agent" |
-| Triage | checks each post in the review queue | a note per post (looks real, needs a check, likely fake, duplicate, not a pop-up); fixes small details itself, publishes what it confirmed, removes duplicates and non pop-ups with proof |
-| Checker | rechecks live pop-ups against their source | a flag when one is cancelled or changed |
-| Concierge | answers the questions visitors type into Ask | nothing: it only reads the public list and replies with pop-up ids and a reason each |
+| Agent | Job |
+|---|---|
+| Scout | finds new pop-ups and sends pending drafts |
+| Triage | checks the review queue, fixes small details, publishes or removes with proof |
+| Checker | rechecks live pop-ups against their source |
+| Concierge | answers the questions visitors type into Ask (read only, no key) |
 
-Nothing an agent writes is published without the admin. Drafts are always `pending`, and notes show in the review queue until the admin decides or dismisses them.
-
-How it fits together:
-
-- **Connecting**: "Connect with Manyfold" on each agent card uses Manyfold's Connect A2A sign-in (a device-code flow, `POST /api/connect/a2a/start` then `/poll`). The admin checks the code in Manyfold, picks the agent and approves; Spotted receives the A2A address and a token for that one agent. The device code never leaves the Worker (sealed in KV for 15 minutes). Pasting an address and token by hand still works as a fallback.
-- **Spotted to agent**: the `*/10` cron starts agents that are due over A2A as an async submit (`message/send` with `blocking: false`, so Manyfold's 10-minute blocking cap does not apply), gets the task id back at once, and later checks with `tasks/get`. Runs that do not finish in 3 hours are marked failed. "Run now" starts one straight away.
-- **Agent to Spotted**: `POST /mcp` (MCP, Streamable HTTP, stateless). Without a key it offers `search_popups` and `get_popup` to anyone's AI assistant. With `Authorization: Bearer spk_...` it adds the tools for that agent's job. Keys are stored as SHA-256 and each agent has its own.
-- **What the agent knows**: `skills/spotted-london/SKILL.md`, installed on each agent from GitHub, plus a short brief per run with the run id, limits and the admin's instructions.
-
-One-time setup:
-
-1. Set the secret that encrypts the Manyfold tokens: `npx wrangler secret put AGENTS_KEY` (32+ random characters, for example from `openssl rand -base64 32`). Changing it later means pasting the tokens again.
-2. Apply the migration: `npx wrangler d1 migrations apply spotted-db --remote`.
-3. For each agent, follow the steps at the bottom of /admin/agent: create the agent in Manyfold, install the skill from `https://github.com/tldr0810/spotted-london/tree/main/skills/spotted-london`, give the agent its own Spotted key with `mf mcp add spotted <APP_URL>/mcp --scope project --header "Authorization: Bearer $(pbpaste)" --agent-id agt_…` (Manyfold has no per-agent secrets; the key lives in the MCP server's header). Keep `--scope project`: the default scope writes `~/.claude.json`, which every agent on the same Manyfold sandbox shares, so the last key added would win for all of them (seen on 1 Oct: Triage ran with the Checker's key), press Connect with Manyfold and approve, then Run now.
-
-Scout's memory (migration `0005_scout_sources.sql`, `src/db/scout.ts`):
-
-- **Sources** (`scout_sources`): listing sites, venue pages, brand sites, social accounts and web searches, each checked every N days. Scout reads them with `list_sources` and marks them with `mark_source_checked`. Scout can only `suggest_source`; suggestions wait in **Scout sources** on /admin/agent, where the admin turns sources on, pauses them, adds new ones and sets how often each is checked (API: `/api/v1/admin/agents/sources`). `GET` lists them with a track record (drafts sent, published, rejected) counted from the drafts themselves.
-- **Pages already read** (`scout_seen`): `check_seen` tells Scout which pages it read in the last 30 days, `skip_url` records why a page was not sent. Skipped pages are purged after 90 days; pages that led to drafts stay for the track record.
-- **Extra links** (`popup_links`): a draft can carry up to 5 more links (brand site, venue, tickets, Instagram, TikTok, Xiaohongshu). Instagram and Threads posts are fetched for Scout through Apify (see below) and arrive as leads, found alongside web searches; Scout never logs in itself, and confirms details on a page it can read.
-
-A run counts as done only when the agent reports back with `finish_run`. A turn that ends without it is marked failed, which usually means the agent's `spotted` MCP server is missing or carries another agent's key.
-
-When a Manyfold token expires or is revoked, runs fail with "Manyfold rejected the agent token"; press Connect again on that agent.
-
-## Ask for recommendations (Concierge)
-
-A visitor types what they want ("something free and a bit weird this weekend near Shoreditch") and gets up to 5 real pop-ups back with a reason each. Anyone can ask, signed in or not. Design and the measured wait: `docs/superpowers/specs/2026-10-08-ask-recommendations-design.md`.
-
-- **Flow**: `POST /api/v1/ask {text, taste?, near_me?, turnstile_token?}` stores the question in `asks` and starts the Concierge over A2A (not waiting). The page polls `GET /api/v1/ask/:id` every 2 seconds; each poll asks Manyfold how the task is doing, at most once every 1.5 seconds. `GET /api/v1/ask/status` says whether Ask is on, whether it is resting and how many questions this visitor has left.
-- **The agent can only read**: a Concierge has the public `search_popups` and `get_popup` tools and no Spotted key. It replies with JSON, and Spotted keeps only the pop-ups that are in the public list at that moment. Reasons lose web addresses. The question, the taste summary and pop-up text are data for the agent, never instructions; the brief says so, and the agent's skill (section Concierge) repeats it.
-- **The page**: a chat window (`web/src/components/AskChat.tsx`), opened from the **Ask** chip or the bolt bubble at the top of the map buttons. It is not modal: a card docked bottom right on desktop, a bottom sheet on phones, the map stays usable, and the chevron minimises it back to the bubble. It only shows while a Concierge is on. The thread (up to 10 questions) and its open state live in memory on the device, never in storage; polling runs in `web/src/lib/ask.ts`, so minimising or leaving the page while the agent thinks loses nothing and the bubble and chip get a dot when the answer is ready. Until the answer comes (and when it cannot) the thread shows what the filters and For you would pick for the words (`src/shared/ask-quick.ts`), so it is never a blank wait. Tapping a result opens the pop-up sheet over the chat, which is still there when the sheet closes.
-- **Follow-ups**: each question is still answered on its own, so a follow-up is sent with the question it follows, cut to 120 characters: `cheaper (Earlier I asked: something to eat on Saturday)`. The thread shows only what was typed (`composeQuestion` in `src/shared/ask-chat.ts`). Under the latest answer, the chips Only free, Today, This weekend and (with a position) Closest first narrow those picks in the browser and cost no question; Something different asks again.
-- **Privacy**: only a short summary of the taste goes along (liked and left-out categories, whether free entry is liked, and up to three liked and three skipped tags, as keys from the fixed list; `tasteSummary` in `src/shared/taste.ts`). The position never leaves the browser; `near_me` only says the browser can order by distance, and the agent answers `near: true` when the request was about where you are, so the browser puts the nearest first. The question is kept 7 days with a salted hash of the IP, never the IP.
-- **Limits** (counted from the `asks` table, no KV writes): 5 questions per visitor per London day, 150 for everyone (`ASK_DAILY_CAP`, optional variable, `0` switches Ask off), Turnstile on a visitor's first question of the day, 90 seconds to answer. At a limit the API answers 429 or 503 with a message the page shows; nothing else on the page changes.
-- **Cost**: every question is one model turn on Manyfold (Sonnet 5.5, high effort in the first tests). Lower `ASK_DAILY_CAP` if that matters.
-
-One-time setup:
-
-1. Apply the migration: `npx wrangler d1 migrations apply spotted-db --remote` (0018 adds the `concierge` role and the `asks` table). Do this before merging the pull request; the code deployed now keeps working with the new schema.
-2. In Manyfold, create an agent for it on its **own sandbox** (it reads text typed by anonymous visitors) and give it the public tools with no key: `mf mcp add spotted <APP_URL>/mcp --scope project --agent-id agt_…`.
-3. On /admin/agent press **Concierge** under Add another, press Connect with Manyfold, approve that agent, and switch it on. Ask shows for visitors only while a Concierge is on.
-
-## Use Spotted from your own AI assistant
-
-Anyone can connect ChatGPT, Claude, Codex or Gemini CLI to Spotted and ask what is on. The page for people is `/connect` (menu: "Use with AI", `web/src/pages/Connect.tsx`); the guide for assistants is `/llms.txt` (`src/lib/llms.ts`, built from `APP_URL`, so a custom domain needs no edit). Both read the setup words from `src/shared/connect.ts`. The page opens on one app with `/connect?app=chatgpt|claude|claude-code|codex|cursor|gemini`; check the steps in the real apps when you change them, because their menus move.
-
-- **What they get**: the keyless MCP tools `search_popups` and `get_popup` at `POST /mcp`. No sign-in, no key. Preferences stay with the assistant: it turns "I like matcha, not outdoors" into `tags` / `avoid_tags` itself. Spotted sees only the search it sends, never the chat or the person. A signed-in link to a Spotted account (personal token, `get_my_taste`) is not built.
-- **Browsing-only assistants** read `/llms.txt` and call `GET /api/v1/popups` (the filters are listed there).
-- **Limits**: keyless calls are counted per visitor (salted IP hash) by a Cloudflare rate limit binding, `MCP_LIMIT` in `wrangler.jsonc` (120 a minute, also in the `previews` block). The MCP tools and `GET /api/v1/popups` count separately; past the limit the tool answers with a message, the list answers 429. Without the binding nothing is limited. Agents with a key are not limited here. The Concierge calls `/mcp` without a key from one Manyfold address, so if Ask ever bursts past 120 searches a minute, raise the limit.
-- **Safety**: titles, hosts and descriptions are typed by the public and land in someone else's assistant. Every public answer carries a `note` saying so, descriptions are cut at 1,500 characters for keyless callers, and the MCP `instructions` say the same.
-
-## Tags
-
-A pop-up can carry up to 5 tags such as `interactive`, `late_night`, `family` or `outdoors`: facts the organiser's page states, from a fixed list in `src/shared/tags.ts` (design: `docs/superpowers/specs/2026-10-08-scout-tags-design.md`). They are stored in `popups.tags` (migration `0020_tags.sql`, one nullable column), travel in the public snapshot, and show as small read-only labels on the pop-up sheet.
-
-- `GET /api/v1/popups?tag=family,outdoors` keeps pop-ups that have every one of the tags, `avoid=outdoors` drops any that have one. Pop-ups nobody has tagged yet fail `tag` and pass `avoid`.
-- `search_popups` (MCP) takes `tags` and `avoid_tags` and returns each pop-up's `tags` (`null` means nobody has tagged it yet).
-- **Agents set tags.** The Scout sends `tags` (and `tag_quotes`) with a draft. Triage and Checker correct them with `tags: { add, remove }` in `add_note`. Six tags (`family`, `adults_only`, `dog_friendly`, `vegan`, `late_night`, `booking_needed`) need a quote that Spotted finds on the page and that says something about the tag; without one only that tag is dropped and the draft or note goes through. A tag outside the list is dropped and reported, never stored. Agent changes are in the audit log (`popup.agent_tags`, old and new set) and limited to 60 a day per agent. After merging, reinstall the skill on each Manyfold agent (it is installed from GitHub; SKILL.md is now version 1.15.0).
-- **Check how it is going** in the Tags block on /admin/agent (`GET /api/v1/admin/agents/tag-report`): how many live pop-ups are tagged, how many pop-ups carry each tag, what Triage and Checker changed, and ten tagged pop-ups to check by eye.
-- **Taste and Ask use them.** "For you" keeps a yes/no tally per tag next to the categories (in the browser, and on the account for signed-in people like the rest of the taste), at half the weight of the category; they only nudge the order, and a pop-up nobody has tagged is scored by category alone. Ask's agent can search with `tags` and `avoid_tags`, is told what each tag means and what the visitor leans towards, and the quick answer shown while it thinks reads obvious words ("kids", "late", "outdoors", "indoors" or rain avoids outdoors).
-- The admin sets or clears tags with `PUT /api/v1/admin/popups/:id/tags` (`{"tags": ["family"]}`, `[]` for none, `null` for not looked at yet).
-- Apply the migration before merging the pull request: `npx wrangler d1 migrations apply spotted-db --remote`. The code deployed now ignores the new column.
-
-## "For you" taste on your account
-
-- The taste ("For you", the 10 swipes) is used from the browser, in `localStorage` key `spotted.taste`, so it works signed out and offline. Signed-out people never send it anywhere.
-- Signed-in people also keep a copy on the account, so a new device gets it back: `GET /api/v1/me/taste` and `PUT /api/v1/me/taste {taste, base}` (table `user_taste`, migration `0019_user_taste`). `base` is the `updated_at` the browser last saw (0 for none); if the account moved on, the answer is 409 `taste_changed` with the current copy. The body is cleaned with `parseTaste` and capped at 256,000 characters. Deleting the account deletes the row.
-- Which copy wins is `decideSync` in `src/shared/taste-sync.ts` (rules in its comment and in CLAUDE.md). In short: the whole taste, the more recent change wins; an empty device takes the account's; a first sign-in with picks and an empty account uploads them; signing out clears the device so a shared browser starts empty.
-- The public list and snapshot are the same for everyone and carry no taste.
-- Migration 0019 is a new table only. Run it before merging: `npx wrangler d1 migrations apply spotted-db --remote`. The code deployed now never reads the table, and the new code answers 503 on `/me/taste` (and still deletes accounts) if it runs first.
-
-## Instagram and Threads posts (Apify)
-
-Scout can read public Instagram and Threads posts that Spotted fetches for it. Add sources on `/admin/agent` under Scout sources, kind Social, with a real address:
-
-| Address | What is fetched |
-| --- | --- |
-| `https://www.instagram.com/<name>/` | an account's recent posts |
-| `https://www.instagram.com/explore/tags/<tag>/` | a hashtag |
-| `https://www.instagram.com/explore/locations/<id>/` | a place |
-| `https://www.threads.net/@<name>` | a Threads account |
-
-A cron job starts an Apify run for each source when it is due (the "How often" setting), keeps posts that talk about pop-ups, and stores them. Scout reads them with `get_social_posts`, confirms each on a brand or venue page, and sends drafts. Cost is capped at US$4 in any 30 days (the Apify free plan gives US$5 a month); fetching stops at the cap and the screen shows the spend. Each run is also capped on Apify's side by items, charge and time.
-
-Turned on in production since 2026-10-01 (`APIFY_TOKEN` is set and migration 0006 is applied). To set it up again, for example after rotating the token:
-
-1. Make a free account at apify.com, then Settings, then API & Integrations, and copy the API token.
-2. In a terminal in this folder run `npx wrangler secret put APIFY_TOKEN` and paste the token when asked.
-3. Only on a new database: run `npx wrangler d1 migrations apply spotted-db --remote` so migration 0006 exists.
-4. Add a few Social sources, then wait for the next 10 minute cron tick. Check `npx wrangler tail` if nothing appears.
-5. Reinstall the updated skill on the Scout agent in Manyfold (SKILL.md is version 1.11.0).
-
-Check the actors still return the fields we read (about US$0.05): `read -s APIFY_TOKEN && export APIFY_TOKEN && node scripts/apify-smoke.mjs; unset APIFY_TOKEN`.
-
-## Insights and usage stats
-
-How people use Spotted, kept anonymous. Admins open **Insights** from the menu (`/admin/insights`), a page of its own, not part of the Agents settings.
-
-- **What is counted.** The browser sends small events to `POST /api/v1/e` (`web/src/lib/track.ts`, `src/shared/tracking.ts`): page views, which pop-up was opened, saved, voted on, checked into, shared or followed to its source, which category or date filter was tapped, that someone searched or asked (never the words), that they started to sign in and came back signed in, that they posted, and the site they came from. Every event carries a random id made on the device (`localStorage spotted.vid`), signed in yes or no, phone or desktop, and the country Cloudflare reports. The id is never linked to an account, email or IP address. Admins are not counted, and neither is anyone with Do Not Track, Global Privacy Control, or the **Anonymous usage stats** switch on the Me page set to off. Only PRODUCTION builds send anything.
-- **Where it goes.** The Worker (`src/routes/events.ts`, always answers 204) writes each event to **Workers Analytics Engine**, dataset `spotted_events`, binding `EVENTS`. That costs no D1 or KV writes, and the session is not looked up. `src/lib/events.ts` is the whitelist: unknown events and any value that is not a fixed word are dropped, so typed text cannot get in. If the binding is missing, events are dropped and nothing breaks.
-- **Reading it back.** Insights reads the dataset through the Analytics Engine SQL API (`src/db/insights.ts`) and shows account counts from D1 beside it. Without the two secrets below it still shows the account counts and says what to set.
-  1. Cloudflare dashboard, Workers & Pages overview: copy your **Account ID**, then `npx wrangler secret put CF_ACCOUNT_ID`.
-  2. My Profile, API Tokens, Create Token, Create Custom Token, permission **Account / Account Analytics / Read**. Then `npx wrangler secret put CF_ANALYTICS_TOKEN`. (Preview builds have no secrets, so Insights shows the setup note there.)
-- **Quota.** Analytics Engine on the free plan has daily limits on points written and on read queries (check the current numbers in the Cloudflare docs). One Insights load makes about 17 queries and is cached in the Worker for 5 minutes.
-- **Search engines.** `/robots.txt` and `/sitemap.xml` are served by the Worker (`src/pages.ts`); the sitemap is the home page, `/connect`, `/privacy` and every pop-up in the public list. Submit the sitemap in Google Search Console after verifying the site.
-- **Privacy.** `/privacy` describes all of this. Change it in the same PR as any change to what is sent.
-
-## What is not built yet
-
-- Emails other than sign-in: newsletter confirmation and reminders are found by the jobs but not sent yet.
-- Vote ring detection in the daily abuse scan.
-- Photo uploads by people other than the poster, and an image moderation step.
+- Spotted starts runs over A2A from the `*/10` cron. Agents talk back through `POST /mcp` with their own `spk_...` key.
+- Public tools `search_popups` and `get_popup` need no key and are rate limited per visitor.
+- Agent setup: follow the steps at the bottom of /admin/agent. Install the skill from `skills/spotted-london`, add the key with `mf mcp add ... --scope project`, press Connect with Manyfold, then Run now.
+- Details (leases, auto-publish, limits, Ask, tags, Apify, insights) are in [CLAUDE.md](CLAUDE.md).
 
 ## Production
 
-Live at **https://spotted-london.zack11712.workers.dev**. The table below describes the maintainer's deployment; to run your own, create the same resources and put your ids in `wrangler.jsonc`.
+Live at **https://spotted-london.zack11712.workers.dev**.
 
-| Resource | Name | Notes |
-|---|---|---|
-| Worker | `spotted-london` | cron: every 10 min, hourly, daily 04:00 UTC |
-| D1 | `spotted-db` (WEUR) | id in `wrangler.jsonc` |
-| KV | `CACHE` | autofill cache and rate limits |
-| R2 | `spotted-images` (WEUR) | photos, served through `/api/v1/images/...` |
-| Turnstile | "Spotted London" | site key in `wrangler.jsonc`, secret in `TURNSTILE_SECRET` |
-| Analytics Engine | `spotted_events` (binding `EVENTS`) | anonymous usage events, see Insights |
-| Secrets | `IP_SALT`, `TURNSTILE_SECRET`, `AGENTS_KEY` | set with `wrangler secret put`, never in the repo. Optional for Insights: `CF_ACCOUNT_ID`, `CF_ANALYTICS_TOKEN` |
+| Resource | Name |
+|---|---|
+| Worker | `spotted-london` (cron: every 10 min, hourly, daily 04:00 UTC) |
+| D1 | `spotted-db` |
+| KV | `CACHE` |
+| R2 | `spotted-images` |
+| Analytics Engine | `spotted_events` (binding `EVENTS`) |
+
+Secrets are set with `npx wrangler secret put NAME`, never in the repo: `IP_SALT`, `TURNSTILE_SECRET`, `AGENTS_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APIFY_TOKEN`. Optional: `RESEND_API_KEY`, `EMAIL_FROM`, `CF_ACCOUNT_ID`, `CF_ANALYTICS_TOKEN`, `AGENT_ADMIN_TOKEN`.
 
 ### How deploys happen
 
-The Worker is connected to this repo with **Cloudflare Workers Builds** (no GitHub Actions). Settings live in the dashboard under Workers & Pages → spotted-london → Settings → Build:
+Cloudflare Workers Builds is connected to this repo (no GitHub Actions).
 
-| Setting | Value |
-|---|---|
-| Git repository | `tldr0810/spotted-london` |
-| Production branch | `main` |
-| Build command | `npm ci && npm run build:web` |
-| Deploy command | `npx wrangler deploy` |
-| Non-production branches | preview builds on, deploy command `npx wrangler preview` (uses the `previews` block in `wrangler.jsonc`) |
-| Build variable | `NODE_VERSION=22` |
-
-- A push to `main` builds and deploys production.
-- A push to any other branch makes a preview version. Previews use the **same** D1, KV and R2 as production. They take their vars and bindings from the `previews` block in `wrangler.jsonc`, so a new binding or var goes in both places. Previews have no secrets and a different address, so you are signed out there and sign in, adding a pop-up and reporting do not work. Browsing does.
-- The build token cannot touch D1. When a change adds a file to `migrations/`, apply it from a computer signed in with wrangler **before** merging: `npx wrangler d1 migrations apply spotted-db --remote`. Migrations must stay backwards compatible with the code already running.
-
-Manual deploy from a computer, if ever needed:
-
-```bash
-npm run deploy                                                        # build web/ and deploy
-npx wrangler d1 migrations apply spotted-db --remote                  # after adding a migration
-npx wrangler tail                                                     # live logs
-```
-
-### Example data
-
-The live site had fictional pop-ups marked **Example** (`is_example = 1`) until 2026-10-02, when they were removed with `seed/clear-examples.sql`. The column and the label stay. Their accounts used `@example.invalid` addresses, so nobody could sign in as them. To load examples again, regenerate with `python3 scripts/seed.py` and run the first command below.
-
-```bash
-npx wrangler d1 execute spotted-db --remote --file=./seed/examples.sql        # load
-npx wrangler d1 execute spotted-db --remote --file=./seed/clear-examples.sql  # remove again
-```
+- Push to `main` builds and deploys production.
+- Other branches get a preview version. Previews share production D1, KV and R2, have no secrets, and read vars and bindings from the `previews` block in `wrangler.jsonc`, so add new ones in both places.
+- The build token cannot touch D1. If a change adds a file to `migrations/`, run `npx wrangler d1 migrations apply spotted-db --remote` from a signed-in computer **before** merging.
+- Build settings: build command `npm ci && npm run build:web`, deploy command `npx wrangler deploy`, `NODE_VERSION=22`.
 
 ### Still to switch on
 
-- **Sign in**: add `RESEND_API_KEY` and `EMAIL_FROM` (email links) and/or `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Until then the site is browse-only.
-- **Custom domain**: add it to the Worker, update `APP_URL`, and add the domain to the Turnstile widget.
+- Email sign-in and reminders: add `RESEND_API_KEY` and `EMAIL_FROM`.
+- Custom domain: add it to the Worker, update `APP_URL`, add it to Turnstile.
 
 ## Licence and credits
 
-Code: [MIT](LICENSE). Contributions are welcome, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-The MIT licence does not cover the icons in `web/src/components/Icon.tsx`. Most are hand-drawn icons from [Koboyo](https://koboyo.com/icons), used under [their licence](https://koboyo.com/icons/license): free to use in a product, but you may not resell or redistribute them as an icon collection. If you fork this project, use your own icons or check that licence first. Map tiles come from [OpenFreeMap](https://openfreemap.org), address search from [Photon](https://photon.komoot.io), map rendering is [MapLibre](https://maplibre.org).
-
-The pop-up data in a running deployment is submitted by its users and is not part of this repository.
+Code: [MIT](LICENSE). The icons in `web/src/components/Icon.tsx` are mostly from [Koboyo](https://koboyo.com/icons) under [their licence](https://koboyo.com/icons/license) and are not covered by MIT. Map tiles: [OpenFreeMap](https://openfreemap.org). Address search: [Photon](https://photon.komoot.io). Maps: [MapLibre](https://maplibre.org). Pop-up data in a running deployment is submitted by its users and is not part of this repository.
